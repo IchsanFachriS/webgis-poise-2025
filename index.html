@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGIS Pantai Utara Jawa - Demak</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Georaster Layer for Leaflet -->
+    <script src="https://unpkg.com/georaster@1.6.0/dist/georaster.browser.bundle.min.js"></script>
+    <script src="https://unpkg.com/georaster-layer-for-leaflet@3.10.0/dist/georaster-layer-for-leaflet.min.js"></script>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        .layer-item {
+            transition: all 0.2s ease;
+        }
+        
+        .layer-item:hover {
+            transform: translateX(4px);
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a202c;
+        }
+        
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000;
+            box-shadow: 2px 0 20px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar.hidden {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .sidebar::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        
+        .sidebar::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+        
+        .legend-gradient {
+            background: linear-gradient(to right, #3b82f6, #10b981, #eab308, #ef4444);
+            height: 20px;
+            border-radius: 4px;
+        }
+        
+        .toggle-btn {
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .category-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            backdrop-filter: blur(10px);
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 350px !important;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100% !important;
+                max-width: 340px;
+            }
+            
+            #mapLegend {
+                bottom: 1rem !important;
+                right: 1rem !important;
+                left: 1rem !important;
+                max-width: none !important;
+            }
+            
+            #coordinates {
+                font-size: 11px !important;
+                padding: 0.5rem !important;
+            }
+            
+            .sidebar-header h1 {
+                font-size: 1.125rem !important;
+            }
+            
+            .sidebar-header p {
+                font-size: 0.75rem !important;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .sidebar {
+                max-width: 300px;
+            }
+            
+            #toggleSidebar {
+                top: 0.75rem !important;
+                left: 0.75rem !important;
+                padding: 0.625rem !important;
+            }
+            
+            #coordinates {
+                top: 0.75rem !important;
+                right: 0.75rem !important;
+                font-size: 10px !important;
+            }
+            
+            .sidebar-header h1 {
+                font-size: 1rem !important;
+            }
+        }
+        
+        @media (max-width: 360px) {
+            .sidebar {
+                max-width: 280px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white overflow-hidden">
+    
+    <!-- Map Container (Full Screen Background) -->
+    <div id="map"></div>
+    
+    <!-- Toggle Sidebar Button (Now positioned to not overlap with sidebar) -->
+    <button 
+        id="toggleSidebar" 
+        class="toggle-btn fixed top-4 left-4 z-[1001] bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white p-3 rounded-lg shadow-xl transition-all"
+        title="Toggle Sidebar"
+    >
+        <svg id="menuIcon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+        <svg id="closeIcon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+    </button>
+    
+    <!-- Sidebar -->
+    <div id="sidebar" class="sidebar w-96 bg-gray-800">
+        <!-- Header - Fixed at top -->
+        <div class="sidebar-header p-5 border-b border-gray-700 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 shadow-lg">
+            <h1 class="text-xl font-bold mb-2 leading-tight">WebGIS Prediksi Evolusi Garis Pantai & Karbon Biru</h1>
+            <p class="text-sm text-blue-100 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                Kabupaten Demak, Jawa Tengah
+            </p>
+        </div>
+        
+        <!-- Search Box -->
+        <div class="p-4 border-b border-gray-700 bg-gray-750">
+            <div class="relative">
+                <input 
+                    type="text" 
+                    id="searchLayer" 
+                    placeholder="🔍 Cari layer..." 
+                    class="w-full px-4 py-2.5 pl-10 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-all"
+                />
+                <svg class="w-5 h-5 absolute left-3 top-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+            </div>
+        </div>
+        
+        <!-- Layer Controls - Scrollable area -->
+        <div class="flex-1 overflow-y-auto">
+            <div class="p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold text-blue-400">Layers Tersedia</h2>
+                    <span id="layerCount" class="text-xs bg-blue-600 px-2.5 py-1 rounded-full font-semibold">0</span>
+                </div>
+                
+                <div id="layerList" class="space-y-3">
+                    <!-- Layers will be populated here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Info Panel - Fixed at bottom -->
+        <div class="p-4 border-t border-gray-700 bg-gray-750">
+            <h3 class="text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                Statistik
+            </h3>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+                <div class="bg-gray-700 p-3 rounded-lg">
+                    <div class="text-gray-400 mb-1">Layer Aktif</div>
+                    <div id="activeLayersCount" class="text-2xl text-green-400 font-bold">0</div>
+                </div>
+                <div class="bg-gray-700 p-3 rounded-lg">
+                    <div class="text-gray-400 mb-1">Total Layer</div>
+                    <div id="totalLayersCount" class="text-2xl text-blue-400 font-bold">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Map Legend -->
+    <div id="mapLegend" class="fixed bottom-24 right-6 z-[999] bg-gray-800 bg-opacity-95 backdrop-blur-sm p-4 rounded-xl shadow-2xl max-w-xs border border-gray-700 hidden">
+        <h3 class="text-sm font-bold mb-3 text-blue-400 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+            </svg>
+            Legend
+        </h3>
+        <div id="legendContent" class="text-xs space-y-2.5">
+            <!-- Legend will be populated dynamically -->
+        </div>
+    </div>
+    
+    <!-- Coordinate Display -->
+    <div id="coordinates" class="fixed top-4 right-4 z-[999] bg-gray-800 bg-opacity-95 backdrop-blur-sm px-4 py-2.5 rounded-lg shadow-xl border border-gray-700 text-xs">
+        <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <span class="text-gray-400 hidden sm:inline">Koordinat: </span>
+            <span id="coordValue" class="text-blue-400 font-mono">-</span>
+        </div>
+    </div>
+
+    <script>
+        // Initialize map centered on Demak
+        const map = L.map('map', {
+            zoomControl: true,
+            attributionControl: false
+        }).setView([-6.8908, 110.6396], 11);
+        
+        // Add base layers
+        const baseLayers = {
+            'Satelit': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Esri',
+                maxZoom: 18
+            }),
+            'Streets': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }),
+            'Dark': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© CartoDB',
+                maxZoom: 19
+            }),
+            'Topografi': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenTopoMap',
+                maxZoom: 17
+            })
+        };
+        
+        baseLayers['Satelit'].addTo(map);
+        L.control.layers(baseLayers, null, {position: 'topright'}).addTo(map);
+        
+        // Scale control
+        L.control.scale({imperial: false, position: 'bottomleft', maxWidth: 150}).addTo(map);
+        
+        // Coordinate display with better formatting
+        map.on('mousemove', function(e) {
+            const lat = e.latlng.lat.toFixed(6);
+            const lng = e.latlng.lng.toFixed(6);
+            document.getElementById('coordValue').textContent = `${lat}, ${lng}`;
+        });
+        
+        // Storage for layers
+        const layerGroups = {};
+        let activeLayerCount = 0;
+        
+        // List of GeoTIFF files with better metadata
+        const tiffFiles = [
+            {
+                file: 'garis_pantai_2020.tif',
+                name: 'Garis Pantai 2020',
+                info: 'Garis pantai hasil ekstraksi NDWI tahun 2020',
+                color: '#3b82f6'
+            },
+            {
+                file: 'garis_pantai_2024.tif',
+                name: 'Garis Pantai 2024',
+                info: 'Garis pantai hasil ekstraksi NDWI tahun 2024',
+                color: '#2563eb'
+            },
+            {
+                file: 'prediksi_garis_pantai_2035.tif',
+                name: 'Prediksi Garis Pantai 2035',
+                info: 'Prediksi garis pantai tahun 2035 berdasarkan LRR',
+                color: '#1d4ed8'
+            },
+            {
+                file: 'prediksi_garis_pantai_2045.tif',
+                name: 'Prediksi Garis Pantai 2045',
+                info: 'Prediksi garis pantai tahun 2045 berdasarkan LRR',
+                color: '#1e40af'
+            },
+            {
+                file: 'potensi_banjir_rob.tif',
+                name: 'Potensi Banjir Rob',
+                info: 'Area rawan banjir rob dari analisis Sentinel-1',
+                color: '#dc2626'
+            },
+            {
+                file: 'intrusi_air_laut.tif',
+                name: 'Intrusi Air Laut',
+                info: 'Zona rawan intrusi air laut (elevasi <5m, jarak <5km)',
+                color: '#ea580c'
+            },
+            {
+                file: 'cvi_demak.tif',
+                name: 'CVI Demak',
+                info: 'Coastal Vulnerability Index Demak',
+                color: '#f59e0b'
+            },
+            {
+                file: 'subsidence.tif',
+                name: 'Subsidence',
+                info: 'Simulasi penurunan muka tanah (cm/tahun)',
+                color: '#eab308'
+            },
+            {
+                file: 'zona_potensial_mangrove.tif',
+                name: 'Zona Potensial Mangrove',
+                info: 'Zona potensial penanaman mangrove (WLC)',
+                color: '#22c55e'
+            },
+            {
+                file: 'emission_hotspot_index.tif',
+                name: 'Emission Hotspot Index',
+                info: 'Hotspot emisi karbon dari degradasi mangrove',
+                color: '#ef4444'
+            },
+            {
+                file: 'sequestration_hotspot_index.tif',
+                name: 'Sequestration Hotspot Index',
+                info: 'Hotspot potensi sekuestrasi karbon',
+                color: '#10b981'
+            },
+            {
+                file: 'prioritas_restorasi.tif',
+                name: 'Prioritas Restorasi',
+                info: 'Area prioritas restorasi mangrove',
+                color: '#14b8a6'
+            }
+        ];
+        
+        // Category mapping for better organization
+        const categories = {
+            'Garis Pantai': {
+                keywords: ['garis_pantai', 'prediksi_garis_pantai'],
+                icon: '🌊',
+                color: 'blue'
+            },
+            'Risiko Bencana': {
+                keywords: ['potensi_banjir', 'intrusi_air', 'cvi', 'subsidence'],
+                icon: '⚠️',
+                color: 'red'
+            },
+            'Vegetasi & Karbon': {
+                keywords: ['zona_potensial', 'emission_hotspot', 'sequestration_hotspot', 'prioritas_restorasi'],
+                icon: '🌳',
+                color: 'green'
+            }
+        };
+        
+        function getCategoryForFile(filename) {
+            for (const [category, data] of Object.entries(categories)) {
+                if (data.keywords.some(keyword => filename.includes(keyword))) {
+                    return category;
+                }
+            }
+            return 'Lainnya';
+        }
+        
+        // Populate layer list with improved UI
+        function populateLayerList() {
+            const layerList = document.getElementById('layerList');
+            const categorized = {};
+            
+            // Categorize files
+            tiffFiles.forEach(item => {
+                const category = getCategoryForFile(item.file);
+                if (!categorized[category]) {
+                    categorized[category] = [];
+                }
+                categorized[category].push(item);
+            });
+            
+            // Create layer items by category
+            Object.entries(categorized).forEach(([category, items]) => {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'mb-4';
+                
+                const categoryData = categories[category] || {icon: '📍', color: 'gray'};
+                
+                const categoryHeader = document.createElement('div');
+                categoryHeader.className = 'category-header flex items-center gap-2 mb-2.5 p-2 bg-gray-750 rounded-lg text-sm font-semibold text-gray-200';
+                categoryHeader.innerHTML = `
+                    <span class="text-lg">${categoryData.icon}</span>
+                    <span class="flex-1">${category}</span>
+                    <span class="text-xs bg-gray-600 px-2 py-0.5 rounded-full">${items.length}</span>
+                `;
+                categoryDiv.appendChild(categoryHeader);
+                
+                items.forEach(item => {
+                    const layerItem = document.createElement('div');
+                    layerItem.className = 'layer-item flex items-center gap-3 p-3 bg-gray-700 rounded-lg cursor-pointer ml-2';
+                    layerItem.dataset.filename = item.file;
+                    
+                    layerItem.innerHTML = `
+                        <div class="flex items-center justify-center">
+                            <input type="checkbox" id="layer_${item.file}" class="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                        </div>
+                        <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${item.color}"></div>
+                        <label for="layer_${item.file}" class="flex-1 cursor-pointer text-sm font-medium">
+                            ${item.name}
+                        </label>
+                        <button class="info-btn text-gray-400 hover:text-blue-400 transition-colors p-1" data-file="${item.file}" title="Info">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </button>
+                    `;
+                    
+                    const checkbox = layerItem.querySelector('input[type="checkbox"]');
+                    checkbox.addEventListener('change', (e) => toggleLayer(item, e.target.checked));
+                    
+                    const infoBtn = layerItem.querySelector('.info-btn');
+                    infoBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showLayerInfo(item);
+                    });
+                    
+                    categoryDiv.appendChild(layerItem);
+                });
+                
+                layerList.appendChild(categoryDiv);
+            });
+            
+            document.getElementById('layerCount').textContent = tiffFiles.length;
+            document.getElementById('totalLayersCount').textContent = tiffFiles.length;
+        }
+        
+        // Toggle layer visibility with loading state
+        async function toggleLayer(item, visible) {
+            const filename = item.file;
+            
+            if (visible) {
+                if (!layerGroups[filename]) {
+                    const checkbox = document.getElementById(`layer_${filename}`);
+                    const parent = checkbox.closest('.layer-item');
+                    
+                    // Show loading state
+                    parent.style.opacity = '0.6';
+                    parent.style.pointerEvents = 'none';
+                    
+                    // Simulate async loading (replace with actual GeoTIFF loading)
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Create demo layer with appropriate styling
+                    const offset = Math.random() * 0.05 - 0.025;
+                    const layer = L.circleMarker([-6.8908 + offset, 110.6396 + offset], {
+                        radius: 8,
+                        fillColor: item.color,
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.7
+                    }).bindPopup(`
+                        <div class="p-2">
+                            <strong class="text-base">${item.name}</strong>
+                            <p class="text-xs mt-1 text-gray-600">${item.info}</p>
+                        </div>
+                    `);
+                    
+                    layerGroups[filename] = layer;
+                    
+                    // Remove loading state
+                    parent.style.opacity = '1';
+                    parent.style.pointerEvents = 'auto';
+                }
+                
+                layerGroups[filename].addTo(map);
+                activeLayerCount++;
+            } else {
+                if (layerGroups[filename]) {
+                    map.removeLayer(layerGroups[filename]);
+                    activeLayerCount--;
+                }
+            }
+            
+            document.getElementById('activeLayersCount').textContent = activeLayerCount;
+            updateLegend();
+        }
+        
+        // Show layer info with better modal
+        function showLayerInfo(item) {
+            const info = `📊 ${item.name}\n\n${item.info}\n\nFile: ${item.file}`;
+            alert(info);
+        }
+        
+        // Update legend with better styling
+        function updateLegend() {
+            const legend = document.getElementById('mapLegend');
+            const legendContent = document.getElementById('legendContent');
+            
+            const activeLayers = tiffFiles.filter(item => 
+                layerGroups[item.file] && map.hasLayer(layerGroups[item.file])
+            );
+            
+            if (activeLayers.length > 0) {
+                legend.classList.remove('hidden');
+                legend.classList.add('fade-in');
+                legendContent.innerHTML = activeLayers.map(item => `
+                    <div class="flex items-center gap-2.5 p-2 bg-gray-700 rounded">
+                        <div class="w-4 h-4 rounded-full flex-shrink-0" style="background-color: ${item.color}"></div>
+                        <span class="text-gray-200 text-xs">${item.name}</span>
+                    </div>
+                `).join('');
+            } else {
+                legend.classList.add('hidden');
+            }
+        }
+        
+        // Enhanced search functionality
+        document.getElementById('searchLayer').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            const layerItems = document.querySelectorAll('.layer-item');
+            const categoryHeaders = document.querySelectorAll('.category-header');
+            
+            if (searchTerm === '') {
+                layerItems.forEach(item => item.style.display = 'flex');
+                categoryHeaders.forEach(header => header.parentElement.style.display = 'block');
+                return;
+            }
+            
+            const visibleCategories = new Set();
+            
+            layerItems.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                if (text.includes(searchTerm)) {
+                    item.style.display = 'flex';
+                    const category = item.closest('.category-header')?.nextElementSibling || item.parentElement;
+                    visibleCategories.add(category.parentElement);
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            categoryHeaders.forEach(header => {
+                const parent = header.parentElement;
+                if (visibleCategories.has(parent)) {
+                    parent.style.display = 'block';
+                } else {
+                    parent.style.display = 'none';
+                }
+            });
+        });
+        
+        // Toggle sidebar with icon animation
+        let sidebarVisible = true;
+        document.getElementById('toggleSidebar').addEventListener('click', () => {
+            const sidebar = document.getElementById('sidebar');
+            const menuIcon = document.getElementById('menuIcon');
+            const closeIcon = document.getElementById('closeIcon');
+            
+            sidebarVisible = !sidebarVisible;
+            
+            if (sidebarVisible) {
+                sidebar.classList.remove('hidden');
+                menuIcon.classList.remove('hidden');
+                closeIcon.classList.add('hidden');
+            } else {
+                sidebar.classList.add('hidden');
+                menuIcon.classList.add('hidden');
+                closeIcon.classList.remove('hidden');
+            }
+        });
+        
+        // Initialize
+        populateLayerList();
+        
+        // Add custom attribution
+        const attribution = L.control.attribution({prefix: false, position: 'bottomright'});
+        attribution.addAttribution('WebGIS Pantura © 2025 | Data: Sentinel-1/2, SRTM, GMW');
+        attribution.addTo(map);
+        
+        // Add zoom animation
+        map.on('zoomstart', () => {
+            document.getElementById('map').style.transition = 'opacity 0.2s';
+        });
+        
+        // Responsive map adjustments
+        function adjustMapForScreen() {
+            const width = window.innerWidth;
+            if (width < 768 && sidebarVisible) {
+                map.invalidateSize();
+            }
+        }
+        
+        window.addEventListener('resize', adjustMapForScreen);
+        adjustMapForScreen();
+    </script>
+
+</body>
+</html>
