@@ -11,12 +11,18 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
     <!-- Georaster Layer for Leaflet -->
     <script src="https://unpkg.com/georaster@1.6.0/dist/georaster.browser.bundle.min.js"></script>
     <script src="https://unpkg.com/georaster-layer-for-leaflet@3.10.0/dist/georaster-layer-for-leaflet.min.js"></script>
     
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Parse GeoRaster -->
+    <script src="https://unpkg.com/geotiff@2.0.7/dist-browser/geotiff.js"></script>
+    
+    <!-- Geoblaze for raster analysis -->
+    <script src="https://unpkg.com/geoblaze@2.8.0/dist/geoblaze.min.js"></script>
     
     <style>
         * {
@@ -104,12 +110,6 @@
             background: #6b7280;
         }
         
-        .legend-gradient {
-            background: linear-gradient(to right, #3b82f6, #10b981, #eab308, #ef4444);
-            height: 20px;
-            border-radius: 4px;
-        }
-        
         .toggle-btn {
             transition: all 0.3s ease;
         }
@@ -124,6 +124,20 @@
             top: 0;
             z-index: 10;
             backdrop-filter: blur(10px);
+        }
+        
+        .loading-spinner {
+            border: 3px solid rgba(59, 130, 246, 0.3);
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         
         /* Responsive adjustments */
@@ -191,10 +205,10 @@
 </head>
 <body class="bg-gray-900 text-white overflow-hidden">
     
-    <!-- Map Container (Full Screen Background) -->
+    <!-- Map Container -->
     <div id="map"></div>
     
-    <!-- Toggle Sidebar Button (Now positioned to not overlap with sidebar) -->
+    <!-- Toggle Sidebar Button -->
     <button 
         id="toggleSidebar" 
         class="toggle-btn fixed top-4 left-4 z-[1001] bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white p-3 rounded-lg shadow-xl transition-all"
@@ -210,7 +224,7 @@
     
     <!-- Sidebar -->
     <div id="sidebar" class="sidebar w-96 bg-gray-800">
-        <!-- Header - Fixed at top -->
+        <!-- Header -->
         <div class="sidebar-header p-5 border-b border-gray-700 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 shadow-lg">
             <h1 class="text-xl font-bold mb-2 leading-tight">WebGIS Prediksi Evolusi Garis Pantai & Karbon Biru</h1>
             <p class="text-sm text-blue-100 flex items-center gap-2">
@@ -237,7 +251,7 @@
             </div>
         </div>
         
-        <!-- Layer Controls - Scrollable area -->
+        <!-- Layer Controls -->
         <div class="flex-1 overflow-y-auto">
             <div class="p-4">
                 <div class="flex justify-between items-center mb-4">
@@ -251,7 +265,7 @@
             </div>
         </div>
         
-        <!-- Info Panel - Fixed at bottom -->
+        <!-- Info Panel -->
         <div class="p-4 border-t border-gray-700 bg-gray-750">
             <h3 class="text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -330,7 +344,7 @@
         // Scale control
         L.control.scale({imperial: false, position: 'bottomleft', maxWidth: 150}).addTo(map);
         
-        // Coordinate display with better formatting
+        // Coordinate display
         map.on('mousemove', function(e) {
             const lat = e.latlng.lat.toFixed(6);
             const lng = e.latlng.lng.toFixed(6);
@@ -341,96 +355,104 @@
         const layerGroups = {};
         let activeLayerCount = 0;
         
-        // List of GeoTIFF files with better metadata
-        const tiffFiles = [
+        // Updated list of files based on your data folder
+        const dataFiles = [
+            // TIF Files
             {
-                file: 'garis_pantai_2020.tif',
-                name: 'Garis Pantai 2020',
-                info: 'Garis pantai hasil ekstraksi NDWI tahun 2020',
-                color: '#3b82f6'
+                file: 'data/CVI_Demak.tif',
+                name: 'Coastal Vulnerability Index (CVI)',
+                info: 'Indeks kerentanan pesisir Demak berdasarkan multiple parameter',
+                color: '#f59e0b',
+                type: 'tif'
             },
             {
-                file: 'garis_pantai_2024.tif',
-                name: 'Garis Pantai 2024',
-                info: 'Garis pantai hasil ekstraksi NDWI tahun 2024',
-                color: '#2563eb'
-            },
-            {
-                file: 'prediksi_garis_pantai_2035.tif',
-                name: 'Prediksi Garis Pantai 2035',
-                info: 'Prediksi garis pantai tahun 2035 berdasarkan LRR',
-                color: '#1d4ed8'
-            },
-            {
-                file: 'prediksi_garis_pantai_2045.tif',
-                name: 'Prediksi Garis Pantai 2045',
-                info: 'Prediksi garis pantai tahun 2045 berdasarkan LRR',
-                color: '#1e40af'
-            },
-            {
-                file: 'potensi_banjir_rob.tif',
-                name: 'Potensi Banjir Rob',
-                info: 'Area rawan banjir rob dari analisis Sentinel-1',
-                color: '#dc2626'
-            },
-            {
-                file: 'intrusi_air_laut.tif',
-                name: 'Intrusi Air Laut',
-                info: 'Zona rawan intrusi air laut (elevasi <5m, jarak <5km)',
-                color: '#ea580c'
-            },
-            {
-                file: 'cvi_demak.tif',
-                name: 'CVI Demak',
-                info: 'Coastal Vulnerability Index Demak',
-                color: '#f59e0b'
-            },
-            {
-                file: 'subsidence.tif',
-                name: 'Subsidence',
-                info: 'Simulasi penurunan muka tanah (cm/tahun)',
-                color: '#eab308'
-            },
-            {
-                file: 'zona_potensial_mangrove.tif',
-                name: 'Zona Potensial Mangrove',
-                info: 'Zona potensial penanaman mangrove (WLC)',
-                color: '#22c55e'
-            },
-            {
-                file: 'emission_hotspot_index.tif',
+                file: 'data/Emission_Hotspot_Index.tif',
                 name: 'Emission Hotspot Index',
                 info: 'Hotspot emisi karbon dari degradasi mangrove',
-                color: '#ef4444'
+                color: '#ef4444',
+                type: 'tif'
             },
             {
-                file: 'sequestration_hotspot_index.tif',
-                name: 'Sequestration Hotspot Index',
-                info: 'Hotspot potensi sekuestrasi karbon',
-                color: '#10b981'
+                file: 'data/Flood_Demak_2015_2025.tif',
+                name: 'Banjir Rob Demak (2015-2025)',
+                info: 'Area terdampak banjir rob periode 2015-2025',
+                color: '#dc2626',
+                type: 'tif'
             },
             {
-                file: 'prioritas_restorasi.tif',
-                name: 'Prioritas Restorasi',
+                file: 'data/Mangrove_Potential_WLC.tif',
+                name: 'Potensi Mangrove (WLC)',
+                info: 'Zona potensial penanaman mangrove menggunakan Weighted Linear Combination',
+                color: '#22c55e',
+                type: 'tif'
+            },
+            {
+                file: 'data/Restoration_Index.tif',
+                name: 'Indeks Restorasi',
                 info: 'Area prioritas restorasi mangrove',
-                color: '#14b8a6'
+                color: '#14b8a6',
+                type: 'tif'
+            },
+            {
+                file: 'data/Seqestration_Hotspot.tif',
+                name: 'Sequestration Hotspot',
+                info: 'Hotspot potensi sekuestrasi karbon oleh mangrove',
+                color: '#10b981',
+                type: 'tif'
+            },
+            {
+                file: 'data/Subsidence_Demak_Sim.tif',
+                name: 'Simulasi Subsidence Demak',
+                info: 'Simulasi penurunan muka tanah (land subsidence) dalam cm/tahun',
+                color: '#eab308',
+                type: 'tif'
+            },
+            {
+                file: 'data/Zona_Rawan_Intrusi_Pantura.tif',
+                name: 'Zona Rawan Intrusi Air Laut',
+                info: 'Area rawan intrusi air laut di Pantura (elevasi <5m, jarak <5km dari pantai)',
+                color: '#ea580c',
+                type: 'tif'
+            },
+            
+            // GeoJSON Files
+            {
+                file: 'data/LLR.geojson',
+                name: 'Linear Regression Rate (LLR)',
+                info: 'Analisis laju perubahan garis pantai menggunakan Linear Regression',
+                color: '#3b82f6',
+                type: 'geojson'
+            },
+            {
+                file: 'data/Tahun35.geojson',
+                name: 'Prediksi Garis Pantai 2035',
+                info: 'Prediksi posisi garis pantai tahun 2035',
+                color: '#1d4ed8',
+                type: 'geojson'
+            },
+            {
+                file: 'data/Tahun45.geojson',
+                name: 'Prediksi Garis Pantai 2045',
+                info: 'Prediksi posisi garis pantai tahun 2045',
+                color: '#1e40af',
+                type: 'geojson'
             }
         ];
         
-        // Category mapping for better organization
+        // Category mapping
         const categories = {
-            'Garis Pantai': {
-                keywords: ['garis_pantai', 'prediksi_garis_pantai'],
+            'Garis Pantai & Dinamika': {
+                keywords: ['LLR', 'Tahun35', 'Tahun45', 'Linear'],
                 icon: '🌊',
                 color: 'blue'
             },
             'Risiko Bencana': {
-                keywords: ['potensi_banjir', 'intrusi_air', 'cvi', 'subsidence'],
+                keywords: ['CVI', 'Flood', 'Subsidence', 'Intrusi', 'Rawan'],
                 icon: '⚠️',
                 color: 'red'
             },
-            'Vegetasi & Karbon': {
-                keywords: ['zona_potensial', 'emission_hotspot', 'sequestration_hotspot', 'prioritas_restorasi'],
+            'Vegetasi & Karbon Biru': {
+                keywords: ['Mangrove', 'Emission', 'Seqestration', 'Restoration', 'Potential'],
                 icon: '🌳',
                 color: 'green'
             }
@@ -438,20 +460,20 @@
         
         function getCategoryForFile(filename) {
             for (const [category, data] of Object.entries(categories)) {
-                if (data.keywords.some(keyword => filename.includes(keyword))) {
+                if (data.keywords.some(keyword => filename.toLowerCase().includes(keyword.toLowerCase()))) {
                     return category;
                 }
             }
             return 'Lainnya';
         }
         
-        // Populate layer list with improved UI
+        // Populate layer list
         function populateLayerList() {
             const layerList = document.getElementById('layerList');
             const categorized = {};
             
             // Categorize files
-            tiffFiles.forEach(item => {
+            dataFiles.forEach(item => {
                 const category = getCategoryForFile(item.file);
                 if (!categorized[category]) {
                     categorized[category] = [];
@@ -464,7 +486,7 @@
                 const categoryDiv = document.createElement('div');
                 categoryDiv.className = 'mb-4';
                 
-                const categoryData = categories[category] || {icon: '📍', color: 'gray'};
+                const categoryData = categories[category] || {icon: '📁', color: 'gray'};
                 
                 const categoryHeader = document.createElement('div');
                 categoryHeader.className = 'category-header flex items-center gap-2 mb-2.5 p-2 bg-gray-750 rounded-lg text-sm font-semibold text-gray-200';
@@ -480,14 +502,23 @@
                     layerItem.className = 'layer-item flex items-center gap-3 p-3 bg-gray-700 rounded-lg cursor-pointer ml-2';
                     layerItem.dataset.filename = item.file;
                     
+                    const fileTypeIcon = item.type === 'geojson' ? '📍' : '🗺️';
+                    
                     layerItem.innerHTML = `
                         <div class="flex items-center justify-center">
-                            <input type="checkbox" id="layer_${item.file}" class="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                            <input type="checkbox" id="layer_${item.file.replace(/[^a-zA-Z0-9]/g, '_')}" class="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer">
                         </div>
                         <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${item.color}"></div>
-                        <label for="layer_${item.file}" class="flex-1 cursor-pointer text-sm font-medium">
+                        <label for="layer_${item.file.replace(/[^a-zA-Z0-9]/g, '_')}" class="flex-1 cursor-pointer text-sm font-medium">
                             ${item.name}
                         </label>
+                        <span class="text-xs opacity-60">${fileTypeIcon}</span>
+                        <button class="opacity-btn text-gray-400 hover:text-blue-400 transition-colors p-1 hidden" data-file="${item.file}" title="Opacity">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                        </button>
                         <button class="info-btn text-gray-400 hover:text-blue-400 transition-colors p-1" data-file="${item.file}" title="Info">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -497,6 +528,12 @@
                     
                     const checkbox = layerItem.querySelector('input[type="checkbox"]');
                     checkbox.addEventListener('change', (e) => toggleLayer(item, e.target.checked));
+                    
+                    const opacityBtn = layerItem.querySelector('.opacity-btn');
+                    opacityBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showOpacityControl(item, layerItem);
+                    });
                     
                     const infoBtn = layerItem.querySelector('.info-btn');
                     infoBtn.addEventListener('click', (e) => {
@@ -510,55 +547,383 @@
                 layerList.appendChild(categoryDiv);
             });
             
-            document.getElementById('layerCount').textContent = tiffFiles.length;
-            document.getElementById('totalLayersCount').textContent = tiffFiles.length;
+            document.getElementById('layerCount').textContent = dataFiles.length;
+            document.getElementById('totalLayersCount').textContent = dataFiles.length;
         }
         
-        // Toggle layer visibility with loading state
+        // Load GeoJSON
+        async function loadGeoJSON(item) {
+            try {
+                const response = await fetch(item.file);
+                if (!response.ok) throw new Error('Failed to load GeoJSON');
+                
+                const data = await response.json();
+                
+                const layer = L.geoJSON(data, {
+                    style: {
+                        color: item.color,
+                        weight: 2,
+                        opacity: 0.8,
+                        fillOpacity: 0.3
+                    },
+                    onEachFeature: (feature, layer) => {
+                        if (feature.properties) {
+                            let popupContent = `<div class="p-2"><strong class="text-base">${item.name}</strong><br/>`;
+                            for (const [key, value] of Object.entries(feature.properties)) {
+                                popupContent += `<span class="text-xs"><strong>${key}:</strong> ${value}</span><br/>`;
+                            }
+                            popupContent += `</div>`;
+                            layer.bindPopup(popupContent);
+                        }
+                    }
+                });
+                
+                return layer;
+            } catch (error) {
+                console.error(`Error loading GeoJSON ${item.file}:`, error);
+                alert(`Gagal memuat file ${item.name}. Pastikan file ada di folder data/`);
+                return null;
+            }
+        }
+        
+        // Calculate raster statistics
+        async function calculateRasterStats(georaster) {
+            try {
+                // Use geoblaze to calculate statistics
+                const stats = geoblaze.stats(georaster);
+                
+                return {
+                    min: stats[0].min,
+                    max: stats[0].max,
+                    mean: stats[0].mean,
+                    median: stats[0].median,
+                    std: stats[0].std
+                };
+            } catch (error) {
+                console.error('Error calculating statistics:', error);
+                return null;
+            }
+        }
+        
+        // Load GeoTIFF with full implementation
+        async function loadGeoTIFF(item) {
+            try {
+                console.log(`Loading GeoTIFF: ${item.file}`);
+                
+                // Fetch the GeoTIFF file
+                const response = await fetch(item.file);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const arrayBuffer = await response.arrayBuffer();
+                
+                // Parse GeoTIFF using geotiff.js
+                const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
+                const image = await tiff.getImage();
+                const rasters = await image.readRasters();
+                
+                // Get georeferencing information
+                const bbox = image.getBoundingBox();
+                const width = image.getWidth();
+                const height = image.getHeight();
+                
+                console.log(`GeoTIFF Info - Width: ${width}, Height: ${height}, BBox:`, bbox);
+                
+                // Create georaster object
+                const georaster = await parseGeoraster(arrayBuffer);
+                
+                // Define color scale based on layer type
+                const colorScale = getColorScale(item.file);
+                
+                // Create georaster layer
+                const layer = new GeoRasterLayer({
+                    georaster: georaster,
+                    opacity: 0.7,
+                    pixelValuesToColorFn: colorScale,
+                    resolution: 256 // Lower resolution for better performance
+                });
+                
+                // Calculate and display statistics
+                try {
+                    const stats = await calculateRasterStats(georaster);
+                    console.log(`Statistics for ${item.name}:`, stats);
+                    
+                    // Add statistics to layer object for later use
+                    layer.stats = stats;
+                } catch (err) {
+                    console.log('Could not calculate statistics:', err);
+                }
+                
+                // Add click event for pixel value
+                layer.on('click', function(event) {
+                    const { latlng } = event;
+                    const lat = latlng.lat;
+                    const lng = latlng.lng;
+                    
+                    // Get pixel value at clicked location
+                    try {
+                        const values = geoblaze.identify(georaster, [lng, lat]);
+                        if (values && values[0] !== null && values[0] !== undefined) {
+                            const value = values[0];
+                            let popupContent = `
+                                <div class="p-2">
+                                    <strong class="text-base">${item.name}</strong>
+                                    <p class="text-xs mt-1"><strong>Nilai:</strong> ${value.toFixed(2)}</p>
+                                    <p class="text-xs"><strong>Koordinat:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}</p>
+                            `;
+                            
+                            // Add statistics if available
+                            if (layer.stats) {
+                                popupContent += `
+                                    <div class="text-xs mt-2 pt-2 border-t border-gray-300">
+                                        <strong>Statistik Layer:</strong><br/>
+                                        Min: ${layer.stats.min.toFixed(2)}<br/>
+                                        Max: ${layer.stats.max.toFixed(2)}<br/>
+                                        Mean: ${layer.stats.mean.toFixed(2)}
+                                    </div>
+                                `;
+                            }
+                            
+                            popupContent += `</div>`;
+                            
+                            L.popup()
+                                .setLatLng(latlng)
+                                .setContent(popupContent)
+                                .openOn(map);
+                        }
+                    } catch (err) {
+                        console.error('Error getting pixel value:', err);
+                    }
+                });
+                
+                return layer;
+                
+            } catch (error) {
+                console.error(`Error loading GeoTIFF ${item.file}:`, error);
+                console.error('Error details:', error.message);
+                
+                // Fallback: Create a placeholder layer with better styling
+                console.log('Creating placeholder layer...');
+                const bounds = [[-6.95, 110.55], [-6.83, 110.73]];
+                const layer = L.rectangle(bounds, {
+                    color: item.color,
+                    weight: 2,
+                    fillColor: item.color,
+                    fillOpacity: 0.2,
+                    dashArray: '5, 10'
+                }).bindPopup(`
+                    <div class="p-2">
+                        <strong class="text-base">${item.name}</strong>
+                        <p class="text-xs mt-1 text-gray-600">${item.info}</p>
+                        <p class="text-xs mt-2 text-orange-600">
+                            <strong>⚠️ Preview Mode:</strong> File tidak dapat dimuat sepenuhnya.<br/>
+                            Kemungkinan penyebab:<br/>
+                            • File belum tersedia di path: <code>${item.file}</code><br/>
+                            • Format file tidak sesuai<br/>
+                            • CORS policy browser
+                        </p>
+                    </div>
+                `);
+                
+                return layer;
+            }
+        }
+        
+        // Get color scale based on layer type
+        function getColorScale(filename) {
+            const lowerFilename = filename.toLowerCase();
+            
+            // CVI - Yellow to Red scale (low to high vulnerability)
+            if (lowerFilename.includes('cvi')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined || value < 0) return null;
+                    if (value <= 1) return '#22c55e'; // Low - Green
+                    if (value <= 2) return '#eab308'; // Medium - Yellow
+                    if (value <= 3) return '#f97316'; // High - Orange
+                    return '#ef4444'; // Very High - Red
+                };
+            }
+            
+            // Flood - Blue scale (intensity)
+            if (lowerFilename.includes('flood') || lowerFilename.includes('banjir')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined || value === 0) return null;
+                    if (value <= 0.3) return '#93c5fd'; // Light blue
+                    if (value <= 0.6) return '#3b82f6'; // Blue
+                    return '#1e40af'; // Dark blue
+                };
+            }
+            
+            // Subsidence - Purple to Red scale
+            if (lowerFilename.includes('subsidence') || lowerFilename.includes('penurunan')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined) return null;
+                    if (value <= 1) return '#a78bfa'; // Light purple
+                    if (value <= 3) return '#8b5cf6'; // Purple
+                    if (value <= 5) return '#f97316'; // Orange
+                    return '#dc2626'; // Red
+                };
+            }
+            
+            // Intrusion - Orange to Red scale
+            if (lowerFilename.includes('intrusi') || lowerFilename.includes('intrusion')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined || value === 0) return null;
+                    if (value <= 0.3) return '#fed7aa'; // Light orange
+                    if (value <= 0.6) return '#fb923c'; // Orange
+                    return '#dc2626'; // Red
+                };
+            }
+            
+            // Mangrove Potential - Green scale
+            if (lowerFilename.includes('mangrove') || lowerFilename.includes('potential')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined || value === 0) return null;
+                    if (value <= 0.3) return '#bbf7d0'; // Light green
+                    if (value <= 0.6) return '#4ade80'; // Green
+                    return '#16a34a'; // Dark green
+                };
+            }
+            
+            // Emission Hotspot - Red scale (high emissions)
+            if (lowerFilename.includes('emission')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined || value === 0) return null;
+                    if (value <= 0.3) return '#fca5a5'; // Light red
+                    if (value <= 0.6) return '#f87171'; // Red
+                    return '#dc2626'; // Dark red
+                };
+            }
+            
+            // Sequestration Hotspot - Green scale (high sequestration)
+            if (lowerFilename.includes('seqestration') || lowerFilename.includes('sequestration')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined || value === 0) return null;
+                    if (value <= 0.3) return '#86efac'; // Light green
+                    if (value <= 0.6) return '#22c55e'; // Green
+                    return '#15803d'; // Dark green
+                };
+            }
+            
+            // Restoration Index - Teal scale
+            if (lowerFilename.includes('restoration') || lowerFilename.includes('restorasi')) {
+                return values => {
+                    const value = values[0];
+                    if (value === null || value === undefined || value === 0) return null;
+                    if (value <= 0.3) return '#99f6e4'; // Light teal
+                    if (value <= 0.6) return '#2dd4bf'; // Teal
+                    return '#0f766e'; // Dark teal
+                };
+            }
+            
+            // Default color scale - Blue to Red
+            return values => {
+                const value = values[0];
+                if (value === null || value === undefined) return null;
+                
+                // Normalize value to 0-1 range (assuming typical range)
+                const normalized = Math.min(Math.max(value, 0), 1);
+                
+                // Create gradient from blue to red
+                const r = Math.floor(normalized * 255);
+                const g = Math.floor((1 - normalized) * 150);
+                const b = Math.floor((1 - normalized) * 255);
+                
+                return `rgb(${r}, ${g}, ${b})`;
+            };
+        }
+        
+        // Toggle layer visibility
         async function toggleLayer(item, visible) {
             const filename = item.file;
+            const layerId = filename.replace(/[^a-zA-Z0-9]/g, '_');
             
             if (visible) {
                 if (!layerGroups[filename]) {
-                    const checkbox = document.getElementById(`layer_${filename}`);
+                    const checkbox = document.getElementById(`layer_${layerId}`);
                     const parent = checkbox.closest('.layer-item');
                     
                     // Show loading state
-                    parent.style.opacity = '0.6';
+                    const originalHTML = parent.innerHTML;
+                    parent.innerHTML = `
+                        <div class="flex items-center gap-2 w-full justify-center">
+                            <div class="loading-spinner"></div>
+                            <span class="text-sm">Loading ${item.name}...</span>
+                        </div>
+                    `;
+                    parent.style.opacity = '0.8';
                     parent.style.pointerEvents = 'none';
                     
-                    // Simulate async loading (replace with actual GeoTIFF loading)
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    try {
+                        let layer;
+                        if (item.type === 'geojson') {
+                            layer = await loadGeoJSON(item);
+                        } else if (item.type === 'tif') {
+                            layer = await loadGeoTIFF(item);
+                        }
+                        
+                        if (layer) {
+                            layerGroups[filename] = layer;
+                            layer.addTo(map);
+                            activeLayerCount++;
+                            
+                            // Fit bounds to layer if possible
+                            if (layer.getBounds) {
+                                map.fitBounds(layer.getBounds(), {padding: [50, 50]});
+                            }
+                        } else {
+                            // Restore checkbox state if loading failed
+                            parent.innerHTML = originalHTML;
+                            const newCheckbox = parent.querySelector('input[type="checkbox"]');
+                            newCheckbox.checked = false;
+                            newCheckbox.addEventListener('change', (e) => toggleLayer(item, e.target.checked));
+                            const newInfoBtn = parent.querySelector('.info-btn');
+                            newInfoBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                showLayerInfo(item);
+                            });
+                            parent.style.opacity = '1';
+                            parent.style.pointerEvents = 'auto';
+                            return;
+                        }
+                    } catch (error) {
+                        console.error('Error loading layer:', error);
+                        alert(`Terjadi kesalahan saat memuat ${item.name}`);
+                    }
                     
-                    // Create demo layer with appropriate styling
-                    const offset = Math.random() * 0.05 - 0.025;
-                    const layer = L.circleMarker([-6.8908 + offset, 110.6396 + offset], {
-                        radius: 8,
-                        fillColor: item.color,
-                        color: '#fff',
-                        weight: 2,
-                        opacity: 1,
-                        fillOpacity: 0.7
-                    }).bindPopup(`
-                        <div class="p-2">
-                            <strong class="text-base">${item.name}</strong>
-                            <p class="text-xs mt-1 text-gray-600">${item.info}</p>
-                        </div>
-                    `);
-                    
-                    layerGroups[filename] = layer;
-                    
-                    // Remove loading state
+                    // Restore original HTML
+                    parent.innerHTML = originalHTML;
+                    const newCheckbox = parent.querySelector('input[type="checkbox"]');
+                    newCheckbox.checked = true;
+                    newCheckbox.addEventListener('change', (e) => toggleLayer(item, e.target.checked));
+                    const newInfoBtn = parent.querySelector('.info-btn');
+                    newInfoBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showLayerInfo(item);
+                    });
                     parent.style.opacity = '1';
                     parent.style.pointerEvents = 'auto';
+                } else {
+                    layerGroups[filename].addTo(map);
+                    activeLayerCount++;
                 }
-                
-                layerGroups[filename].addTo(map);
-                activeLayerCount++;
             } else {
                 if (layerGroups[filename]) {
                     map.removeLayer(layerGroups[filename]);
                     activeLayerCount--;
+                    
+                    // Hide opacity control button
+                    const layerItem = document.querySelector(`[data-filename="${filename}"]`);
+                    if (layerItem) {
+                        const opacityBtn = layerItem.querySelector('.opacity-btn');
+                        if (opacityBtn) opacityBtn.classList.add('hidden');
+                    }
                 }
             }
             
@@ -566,30 +931,191 @@
             updateLegend();
         }
         
-        // Show layer info with better modal
+        // Show opacity control
+        function showOpacityControl(item, layerItem) {
+            const existingControl = layerItem.querySelector('.opacity-control');
+            if (existingControl) {
+                existingControl.remove();
+                return;
+            }
+            
+            const layer = layerGroups[item.file];
+            if (!layer) return;
+            
+            const currentOpacity = layer.options ? (layer.options.opacity || 0.7) : 0.7;
+            
+            const opacityControl = document.createElement('div');
+            opacityControl.className = 'opacity-control mt-2 p-3 bg-gray-600 rounded-lg';
+            opacityControl.innerHTML = `
+                <div class="flex items-center gap-2 mb-2">
+                    <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    <span class="text-xs font-semibold text-gray-200">Opacity</span>
+                    <span class="ml-auto text-xs font-mono text-blue-400" id="opacity-value-${item.file.replace(/[^a-zA-Z0-9]/g, '_')}">${Math.round(currentOpacity * 100)}%</span>
+                </div>
+                <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value="${currentOpacity * 100}" 
+                    class="w-full h-2 bg-gray-500 rounded-lg appearance-none cursor-pointer opacity-slider"
+                    style="accent-color: #3b82f6;"
+                />
+            `;
+            
+            const slider = opacityControl.querySelector('input[type="range"]');
+            const valueDisplay = opacityControl.querySelector(`#opacity-value-${item.file.replace(/[^a-zA-Z0-9]/g, '_')}`);
+            
+            slider.addEventListener('input', (e) => {
+                const opacity = e.target.value / 100;
+                valueDisplay.textContent = `${e.target.value}%`;
+                
+                if (layer.setOpacity) {
+                    layer.setOpacity(opacity);
+                } else if (layer.setStyle) {
+                    layer.setStyle({ opacity: opacity, fillOpacity: opacity * 0.5 });
+                }
+            });
+            
+            layerItem.appendChild(opacityControl);
+        }
+        
+        // Show layer info
         function showLayerInfo(item) {
-            const info = `📊 ${item.name}\n\n${item.info}\n\nFile: ${item.file}`;
+            const fileType = item.type.toUpperCase();
+            const fileSize = item.type === 'geojson' ? 'Vector' : 'Raster';
+            const info = `📊 ${item.name}\n\n${item.info}\n\nTipe: ${fileType} (${fileSize})\nFile: ${item.file}`;
             alert(info);
         }
         
-        // Update legend with better styling
+        // Get legend info for specific layer type
+        function getLegendInfo(filename) {
+            const lowerFilename = filename.toLowerCase();
+            
+            if (lowerFilename.includes('cvi')) {
+                return {
+                    type: 'gradient',
+                    items: [
+                        { color: '#22c55e', label: 'Rendah (1-2)' },
+                        { color: '#eab308', label: 'Sedang (2-3)' },
+                        { color: '#f97316', label: 'Tinggi (3-4)' },
+                        { color: '#ef4444', label: 'Sangat Tinggi (>4)' }
+                    ]
+                };
+            }
+            
+            if (lowerFilename.includes('flood') || lowerFilename.includes('banjir')) {
+                return {
+                    type: 'gradient',
+                    items: [
+                        { color: '#93c5fd', label: 'Rendah' },
+                        { color: '#3b82f6', label: 'Sedang' },
+                        { color: '#1e40af', label: 'Tinggi' }
+                    ]
+                };
+            }
+            
+            if (lowerFilename.includes('subsidence')) {
+                return {
+                    type: 'gradient',
+                    items: [
+                        { color: '#a78bfa', label: '<1 cm/tahun' },
+                        { color: '#8b5cf6', label: '1-3 cm/tahun' },
+                        { color: '#f97316', label: '3-5 cm/tahun' },
+                        { color: '#dc2626', label: '>5 cm/tahun' }
+                    ]
+                };
+            }
+            
+            if (lowerFilename.includes('mangrove') || lowerFilename.includes('potential')) {
+                return {
+                    type: 'gradient',
+                    items: [
+                        { color: '#bbf7d0', label: 'Potensi Rendah' },
+                        { color: '#4ade80', label: 'Potensi Sedang' },
+                        { color: '#16a34a', label: 'Potensi Tinggi' }
+                    ]
+                };
+            }
+            
+            if (lowerFilename.includes('emission')) {
+                return {
+                    type: 'gradient',
+                    items: [
+                        { color: '#fca5a5', label: 'Emisi Rendah' },
+                        { color: '#f87171', label: 'Emisi Sedang' },
+                        { color: '#dc2626', label: 'Emisi Tinggi' }
+                    ]
+                };
+            }
+            
+            if (lowerFilename.includes('seqestration') || lowerFilename.includes('sequestration')) {
+                return {
+                    type: 'gradient',
+                    items: [
+                        { color: '#86efac', label: 'Sekuestrasi Rendah' },
+                        { color: '#22c55e', label: 'Sekuestrasi Sedang' },
+                        { color: '#15803d', label: 'Sekuestrasi Tinggi' }
+                    ]
+                };
+            }
+            
+            if (lowerFilename.includes('restoration') || lowerFilename.includes('restorasi')) {
+                return {
+                    type: 'gradient',
+                    items: [
+                        { color: '#99f6e4', label: 'Prioritas Rendah' },
+                        { color: '#2dd4bf', label: 'Prioritas Sedang' },
+                        { color: '#0f766e', label: 'Prioritas Tinggi' }
+                    ]
+                };
+            }
+            
+            // Default
+            return {
+                type: 'single',
+                color: '#3b82f6'
+            };
+        }
+        
+        // Update legend with detailed information
         function updateLegend() {
             const legend = document.getElementById('mapLegend');
             const legendContent = document.getElementById('legendContent');
             
-            const activeLayers = tiffFiles.filter(item => 
+            const activeLayers = dataFiles.filter(item => 
                 layerGroups[item.file] && map.hasLayer(layerGroups[item.file])
             );
             
             if (activeLayers.length > 0) {
                 legend.classList.remove('hidden');
                 legend.classList.add('fade-in');
-                legendContent.innerHTML = activeLayers.map(item => `
-                    <div class="flex items-center gap-2.5 p-2 bg-gray-700 rounded">
-                        <div class="w-4 h-4 rounded-full flex-shrink-0" style="background-color: ${item.color}"></div>
-                        <span class="text-gray-200 text-xs">${item.name}</span>
-                    </div>
-                `).join('');
+                
+                legendContent.innerHTML = activeLayers.map(item => {
+                    const legendInfo = getLegendInfo(item.file);
+                    
+                    if (legendInfo.type === 'gradient' && legendInfo.items) {
+                        return `
+                            <div class="mb-3 pb-3 border-b border-gray-700 last:border-b-0 last:mb-0 last:pb-0">
+                                <div class="font-semibold text-xs mb-2 text-gray-200">${item.name}</div>
+                                ${legendInfo.items.map(legendItem => `
+                                    <div class="flex items-center gap-2 py-1">
+                                        <div class="w-4 h-4 rounded flex-shrink-0" style="background-color: ${legendItem.color}"></div>
+                                        <span class="text-gray-300 text-xs">${legendItem.label}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    } else {
+                        return `
+                            <div class="flex items-center gap-2.5 p-2 bg-gray-700 rounded mb-2">
+                                <div class="w-4 h-4 rounded-full flex-shrink-0" style="background-color: ${item.color}"></div>
+                                <span class="text-gray-200 text-xs">${item.name}</span>
+                            </div>
+                        `;
+                    }
+                }).join('');
             } else {
                 legend.classList.add('hidden');
             }
@@ -599,11 +1125,11 @@
         document.getElementById('searchLayer').addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase().trim();
             const layerItems = document.querySelectorAll('.layer-item');
-            const categoryHeaders = document.querySelectorAll('.category-header');
+            const categoryDivs = document.querySelectorAll('#layerList > div');
             
             if (searchTerm === '') {
                 layerItems.forEach(item => item.style.display = 'flex');
-                categoryHeaders.forEach(header => header.parentElement.style.display = 'block');
+                categoryDivs.forEach(div => div.style.display = 'block');
                 return;
             }
             
@@ -611,26 +1137,26 @@
             
             layerItems.forEach(item => {
                 const text = item.textContent.toLowerCase();
-                if (text.includes(searchTerm)) {
+                const filename = item.dataset.filename.toLowerCase();
+                
+                if (text.includes(searchTerm) || filename.includes(searchTerm)) {
                     item.style.display = 'flex';
-                    const category = item.closest('.category-header')?.nextElementSibling || item.parentElement;
-                    visibleCategories.add(category.parentElement);
+                    visibleCategories.add(item.closest('#layerList > div'));
                 } else {
                     item.style.display = 'none';
                 }
             });
             
-            categoryHeaders.forEach(header => {
-                const parent = header.parentElement;
-                if (visibleCategories.has(parent)) {
-                    parent.style.display = 'block';
+            categoryDivs.forEach(div => {
+                if (visibleCategories.has(div)) {
+                    div.style.display = 'block';
                 } else {
-                    parent.style.display = 'none';
+                    div.style.display = 'none';
                 }
             });
         });
         
-        // Toggle sidebar with icon animation
+        // Toggle sidebar
         let sidebarVisible = true;
         document.getElementById('toggleSidebar').addEventListener('click', () => {
             const sidebar = document.getElementById('sidebar');
@@ -648,6 +1174,9 @@
                 menuIcon.classList.add('hidden');
                 closeIcon.classList.remove('hidden');
             }
+            
+            // Adjust map after sidebar toggle
+            setTimeout(() => map.invalidateSize(), 300);
         });
         
         // Initialize
@@ -657,11 +1186,6 @@
         const attribution = L.control.attribution({prefix: false, position: 'bottomright'});
         attribution.addAttribution('WebGIS Pantura © 2025 | Data: Sentinel-1/2, SRTM, GMW');
         attribution.addTo(map);
-        
-        // Add zoom animation
-        map.on('zoomstart', () => {
-            document.getElementById('map').style.transition = 'opacity 0.2s';
-        });
         
         // Responsive map adjustments
         function adjustMapForScreen() {
@@ -673,6 +1197,11 @@
         
         window.addEventListener('resize', adjustMapForScreen);
         adjustMapForScreen();
+        
+        // Console info
+        console.log('%c🗺️ WebGIS Demak Loaded', 'color: #3b82f6; font-size: 16px; font-weight: bold');
+        console.log(`Total layers: ${dataFiles.length}`);
+        console.log('Data files:', dataFiles.map(f => f.file));
     </script>
 
 </body>
